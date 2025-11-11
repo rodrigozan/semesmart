@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState, useEffect } from 'react';
 import { Transaction } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
@@ -6,7 +5,7 @@ import EmptyState from './common/EmptyState';
 import api from '../api';
 
 interface ReportsProps {
-  transactions: Transaction[];
+  transactions?: Transaction[];
 }
 
 interface AIInsight {
@@ -16,36 +15,43 @@ interface AIInsight {
 
 const COLORS = ['#52C293', '#3B82F6', '#EC4899', '#FBBF24', '#A78BFA', '#F87171'];
 
-const Reports: React.FC<ReportsProps> = ({ transactions }) => {
+const Reports: React.FC<ReportsProps> = ({ transactions = [] }) => {
   const [insights, setInsights] = useState<AIInsight[]>([]);
   const [isLoadingInsights, setIsLoadingInsights] = useState(true);
   const [insightsError, setInsightsError] = useState<string | null>(null);
 
-  const expenses = useMemo(() => transactions.filter(t => t.amount < 0), [transactions]);
+  const expenses = useMemo(() => {
+    if (!Array.isArray(transactions)) return [];
+    return transactions.filter(t => t.amount < 0);
+  }, [transactions]);
 
   const dataForPieChart = useMemo(() => {
+    if (!Array.isArray(expenses)) return [];
     const categoryMap: { [key: string]: number } = {};
+
     expenses.forEach(t => {
+      if (!t.category) return;
       if (!categoryMap[t.category]) {
         categoryMap[t.category] = 0;
       }
-      categoryMap[t.category] += Math.abs(t.amount);
+      categoryMap[t.category] += Math.abs(t.amount || 0);
     });
+
     return Object.entries(categoryMap).map(([name, value]) => ({ name, value }));
   }, [expenses]);
 
   useEffect(() => {
-    if (expenses.length > 5) { // Fetch insights only if there's enough data
+    if (expenses.length > 5) {
       const fetchInsights = async () => {
         setIsLoadingInsights(true);
         setInsightsError(null);
         try {
-          const recentExpenses = expenses.slice(0, 30); // Use up to 30 recent expenses for analysis
+          const recentExpenses = expenses.slice(0, 30);
           const result = await api.getAIFinancialInsights(recentExpenses);
-          setInsights(result);
+          setInsights(result || []);
         } catch (error) {
-          console.error("Error fetching AI insights:", error);
-          setInsightsError("Não foi possível carregar as sugestões da IA. Tente novamente mais tarde.");
+          console.error('Error fetching AI insights:', error);
+          setInsightsError('Não foi possível carregar as sugestões da IA. Tente novamente mais tarde.');
         } finally {
           setIsLoadingInsights(false);
         }
@@ -56,48 +62,54 @@ const Reports: React.FC<ReportsProps> = ({ transactions }) => {
     }
   }, [expenses]);
 
-  if (expenses.length === 0) {
-      return (
-          <EmptyState
-              icon="📊"
-              title="Sem dados para os relatórios"
-              description="Adicione algumas despesas para que possamos gerar gráficos e insights para você."
-          />
-      );
+  if (!Array.isArray(transactions) || transactions.length === 0 || expenses.length === 0) {
+    return (
+      <EmptyState
+        icon="📊"
+        title="Sem dados para relatórios"
+        description="Adicione algumas despesas para que possamos gerar gráficos e insights personalizados para você."
+      />
+    );
   }
 
   const renderInsights = () => {
     if (isLoadingInsights) {
-        return (
-            <div className="text-center p-4 bg-white rounded-xl shadow-sm">
-                <p className="font-semibold text-gray-600 animate-pulse">🧠 Analisando seus gastos...</p>
-            </div>
-        );
+      return (
+        <div className="text-center p-4 bg-white rounded-xl shadow-sm">
+          <p className="font-semibold text-gray-600 animate-pulse">
+            🧠 Analisando seus gastos...
+          </p>
+        </div>
+      );
     }
+
     if (insightsError) {
-        return (
-            <div className="text-center p-4 bg-red-50 text-red-700 rounded-xl shadow-sm">
-                <p className="font-semibold">Oops!</p>
-                <p className="text-sm">{insightsError}</p>
-            </div>
-        );
+      return (
+        <div className="text-center p-4 bg-red-50 text-red-700 rounded-xl shadow-sm">
+          <p className="font-semibold">Oops!</p>
+          <p className="text-sm">{insightsError}</p>
+        </div>
+      );
     }
+
     if (insights.length > 0) {
-        return (
-            <div className="space-y-3">
-                {insights.map((insight, index) => (
-                    <div key={index} className="bg-white p-4 rounded-xl shadow-sm">
-                        <p className="font-semibold text-gray-700">💡 {insight.title}</p>
-                        <p className="text-sm text-gray-500">{insight.description}</p>
-                    </div>
-                ))}
+      return (
+        <div className="space-y-3">
+          {insights.map((insight, index) => (
+            <div key={index} className="bg-white p-4 rounded-xl shadow-sm">
+              <p className="font-semibold text-gray-700">💡 {insight.title}</p>
+              <p className="text-sm text-gray-500">{insight.description}</p>
             </div>
-        );
+          ))}
+        </div>
+      );
     }
+
     return (
-       <p className="mt-4 p-3 bg-blue-50 text-blue-800 rounded-xl text-center text-sm">
-          Continue adicionando transações. A IA irá gerar um resumo automático dos seus gastos aqui assim que tiver dados suficientes.
-        </p>
+      <p className="mt-4 p-3 bg-blue-50 text-blue-800 rounded-xl text-center text-sm">
+        Continue adicionando transações. A IA irá gerar um resumo automático dos seus
+        gastos aqui assim que tiver dados suficientes.
+      </p>
     );
   };
 
@@ -119,10 +131,21 @@ const Reports: React.FC<ReportsProps> = ({ transactions }) => {
                 nameKey="name"
               >
                 {dataForPieChart.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  <Cell
+                    key={`cell-${index}`}
+                    fill={COLORS[index % COLORS.length]}
+                  />
                 ))}
               </Pie>
-              <Tooltip formatter={(value: number) => [value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), 'Total']} />
+              <Tooltip
+                formatter={(value: number) => [
+                  value.toLocaleString('pt-BR', {
+                    style: 'currency',
+                    currency: 'BRL',
+                  }),
+                  'Total',
+                ]}
+              />
               <Legend iconType="circle" />
             </PieChart>
           </ResponsiveContainer>

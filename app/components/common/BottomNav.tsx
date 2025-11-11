@@ -2,7 +2,7 @@
 import React from 'react';
 import { HomeIcon, WalletIcon, ChartIcon, TargetIcon, UserIcon } from './Icons';
 
-type Screen = 'inicio' | 'gastos' | 'relatorios' | 'metas' | 'perfil';
+type Screen = 'inicio' | 'historico' | 'relatorios' | 'metas' | 'perfil';
 
 interface BottomNavProps {
   activeScreen: Screen;
@@ -30,7 +30,7 @@ const NavItem: React.FC<{
 const BottomNav: React.FC<BottomNavProps> = ({ activeScreen, setActiveScreen }) => {
   const navItems = [
     { id: 'inicio', label: 'Início', icon: <HomeIcon /> },
-    { id: 'gastos', label: 'Gastos', icon: <WalletIcon /> },
+    { id: 'historico', label: 'Histórico', icon: <WalletIcon /> },
     { id: 'relatorios', label: 'Relatórios', icon: <ChartIcon /> },
     { id: 'metas', label: 'Metas', icon: <TargetIcon /> },
     { id: 'perfil', label: 'Perfil', icon: <UserIcon /> },

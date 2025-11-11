@@ -1,0 +1,16 @@
+{
+  "name": "semesmart_api",
+  "version": "1.0.0",
+  "description": "A API to semesmart project",
+  "main": "import-transactions.cjs",
+  "author": "Rodrigo Zan",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node import-transactions.cjs"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.6.0"
+  }
+}
