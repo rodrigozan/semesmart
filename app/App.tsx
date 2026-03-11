@@ -3,16 +3,7 @@ import { onAuthStateChanged, User, getRedirectResult } from 'firebase/auth';
 
 import { auth } from './firebaseConfig';
 import api from './api';
-import {
-  Goal,
-  Challenge,
-  Transaction,
-  Member,
-  Card,
-  FamilyProfile,
-  UserData,
-} from './types';
-import { defaultUserData } from './constants/defaults';
+import { Transaction, UserData } from './types';
 
 import Header from './components/common/Header';
 import BottomNav from './components/common/BottomNav';
@@ -113,20 +104,8 @@ const App: React.FC = () => {
       return;
     }
 
-    const initAuth = async () => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       try {
-        const result = await getRedirectResult(auth);
-        if (result?.user) {
-          setCurrentUser(result.user);
-          await fetchUserData(result.user);
-          return;
-        }
-      } catch (error: any) {
-        console.error('Erro no redirect:', error.code, error.message);
-        showErrorMessage('Erro de Autenticação', 'Não foi possível completar o login. Por favor, tente novamente. ' + (error.message || ''));
-      }
-
-      const unsubscribe = onAuthStateChanged(auth, async (user) => {
         if (user) {
           setCurrentUser(user);
           await fetchUserData(user);
@@ -135,13 +114,22 @@ const App: React.FC = () => {
           setUserData(null);
           setTransactions([]);
         }
+      } finally {
         setAuthLoading(false);
-      });
+      }
+    });
 
-      return () => unsubscribe();
+    const initAuth = async () => {
+      try {
+        await getRedirectResult(auth);
+      } catch (error: any) {
+        console.error('Erro no redirect:', error.code, error.message);
+        showErrorMessage('Erro de Autenticação', 'Não foi possível completar o login. Por favor, tente novamente. ' + (error.message || ''));
+      }
     };
 
     initAuth();
+    return () => unsubscribe();
   }, [fetchUserData]);
 
   const handleLogout = async () => {
@@ -181,11 +169,12 @@ const App: React.FC = () => {
     }
 
     try {
-      const finalAmount = Math.abs(data.amount);
+      const absoluteAmount = Math.abs(data.amount);
+      const normalizedAmount = data.type === 'expense' ? -absoluteAmount : absoluteAmount;
 
       const rawTransactionToSave = {
         ...data,
-        amount: finalAmount,
+        amount: normalizedAmount,
         userId: currentUser.uid,
       };
 
@@ -313,7 +302,7 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#F7F8FA] text-gray-800">
-      {isOnboardingOpen && <OnboardingGuide onFinish={() => setOnboardingOpen(false)} />}
+      {isOnboardingOpen && <OnboardingGuide onFinish={handleOnboardingFinish} />}
       {isPostOnboardingModalOpen && (
         <PostOnboardingModal
           onConfirm={() => {}}
