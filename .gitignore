@@ -2,4 +2,5 @@ api/node_modules
 app/node_modules
 
 api/.env
+api/serviceAccountKey.json
 app/.env
