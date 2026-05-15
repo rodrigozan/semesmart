@@ -1,227 +1,179 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { onAuthStateChanged, User, getRedirectResult } from 'firebase/auth';
-
-import { auth } from './firebaseConfig';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ProfileProvider, useProfile } from './contexts/ProfileContext';
 import api from './api';
-import { Transaction, UserData } from './types';
+import { Transaction, Goal } from './types';
 
 import Header from './components/common/Header';
 import BottomNav from './components/common/BottomNav';
 import Dashboard from './components/Dashboard';
-import TransactionsList from './components/Transactions'; // Renomeado para evitar conflito de nome
+import TransactionsList from './components/Transactions';
 import Reports from './components/Reports';
 import Goals from './components/Goals';
+import Investments from './components/Investments';
 import Profile from './components/Profile';
-import OnboardingGuide from './components/OnboardingGuide';
-// Importe o modal renomeado
-import TransactionFormModal from './components/modals/TransactionFormModal'; // <-- IMPORTANTE: Novo nome!
-import Auth from './components/Auth';
-import PostOnboardingModal from './components/modals/PostOnboardingModal';
+import ConsolidatedView from './components/ConsolidatedView';
+import TransactionFormModal from './components/modals/TransactionFormModal';
 import ErrorModal from './components/modals/ErrorModal';
+import Login from './pages/Login';
+import ProfileSelector from './pages/ProfileSelector';
 
-// Função utilitária para remover campos undefined (se ainda não estiver global)
-function removeUndefinedFields<T extends Record<string, any>>(obj: T): Partial<T> {
-  const newObj: Partial<T> = {};
-  for (const key in obj) {
-    if (Object.prototype.hasOwnProperty.call(obj, key) && obj[key] !== undefined) {
-      newObj[key] = obj[key];
-    }
-  }
-  return newObj;
-}
+type Screen = 'inicio' | 'historico' | 'relatorios' | 'metas' | 'investimentos' | 'perfil' | 'consolidado';
 
-type Screen = 'inicio' | 'historico' | 'relatorios' | 'metas' | 'perfil';
+const AppContent: React.FC = () => {
+  const { user, loading: authLoading } = useAuth();
+  const { activeProfile, profiles, setActiveProfile, loading: profileLoading, refreshProfiles } = useProfile();
 
-// ... FirebaseNotConfigured component ...
-
-const App: React.FC = () => {
   const [activeScreen, setActiveScreen] = useState<Screen>('inicio');
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [userData, setUserData] = useState<UserData | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [isAuthLoading, setAuthLoading] = useState(true);
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [isDataLoading, setDataLoading] = useState(false);
 
-  // Estados para o modal de transação (agora pode ser para adicionar OU editar)
   const [isTransactionFormModalOpen, setTransactionFormModalOpen] = useState(false);
   const [transactionTypeForModal, setTransactionTypeForModal] = useState<'income' | 'expense'>('expense');
-  const [transactionToEdit, setTransactionToEdit] = useState<Transaction | null>(null); // NOVO: Transação sendo editada
+  const [transactionToEdit, setTransactionToEdit] = useState<Transaction | null>(null);
 
-  const [isOnboardingOpen, setOnboardingOpen] = useState(false);
-  const [isPostOnboardingModalOpen, setPostOnboardingModalOpen] = useState(false);
-  const [startMemberSetup, setStartMemberSetup] = useState(false);
-
-  // Estados para o modal de erro
   const [isErrorModalOpen, setErrorModalOpen] = useState(false);
   const [errorModalTitle, setErrorModalTitle] = useState('');
   const [errorModalMessage, setErrorModalMessage] = useState('');
 
-  const showErrorMessage = (title: string, message: string) => {
+  const showError = (title: string, message: string) => {
     setErrorModalTitle(title);
     setErrorModalMessage(message);
     setErrorModalOpen(true);
   };
 
-  const closeErrorModal = () => {
-    setErrorModalOpen(false);
-    setErrorModalTitle('');
-    setErrorModalMessage('');
-  };
-
-  const fetchUserData = useCallback(async (user: User) => {
-  setDataLoading(true);
-  try {
-    const data = await api.getUserData(user.uid);
-    const txs = await api.getUserTransactions(user.uid);
-
-    console.log('✅ Dados do usuário:', data);
-    console.log('💸 Transações carregadas (APÓS API):', txs.length);
-    // --- NOVO LOG CRÍTICO AQUI ---
-    console.log('DEBUG App.tsx: Conteúdo de txs (lista da API):', txs);
-    // Verificar se a transação de salário está aqui
-    const incomeTx = txs.find(t => t.id === 'D4uK8lTKVMQDHbTPaQ1C'); // Use o ID real da transação de salário
-    if (incomeTx) console.log('DEBUG App.tsx: Transação de salário encontrada em txs:', incomeTx);
-    else console.log('DEBUG App.tsx: Transação de salário NÃO encontrada em txs.');
-    // --- FIM DO NOVO LOG CRÍTICO ---
-
-    setUserData(data);
-    setTransactions(txs);
-
-    if (data && !data.hasSeenOnboarding) setOnboardingOpen(true);
-    setActiveScreen('inicio');
-  } catch (error: any) {
-    console.error('❌ Falha ao carregar dados:', error);
-    setUserData(null);
-    showErrorMessage('Erro ao Carregar Dados', 'Não foi possível carregar os dados do usuário. Por favor, tente novamente mais tarde. ' + (error.message || ''));
-  } finally {
-    setDataLoading(false);
-  }
-}, []);
+  useEffect(() => {
+    if (user && !activeProfile) {
+      refreshProfiles();
+    }
+  }, [user, activeProfile, refreshProfiles]);
 
   useEffect(() => {
-    if (!auth) {
-      setAuthLoading(false);
+    if (profiles.length === 1 && !activeProfile) {
+      setActiveProfile(profiles[0]);
+    }
+  }, [profiles, activeProfile, setActiveProfile]);
+
+  const fetchTransactions = useCallback(async () => {
+    if (!activeProfile) return;
+    setDataLoading(true);
+    try {
+      const res = await api.getTransactions(activeProfile.id);
+      const txs = res.data || [];
+      setTransactions(txs);
+    } catch (err: any) {
+      console.error('Failed to load transactions:', err);
+      setTransactions([]);
+    } finally {
+      setDataLoading(false);
+    }
+  }, [activeProfile]);
+
+  const fetchGoals = useCallback(async () => {
+    if (!activeProfile) return;
+    try {
+      const res = await api.getGoals(activeProfile.id);
+      setGoals(res.data || []);
+    } catch (err: any) {
+      console.error('Failed to load goals:', err);
+      setGoals([]);
+    }
+  }, [activeProfile]);
+
+  useEffect(() => {
+    fetchTransactions();
+  }, [fetchTransactions]);
+
+  useEffect(() => {
+    fetchGoals();
+  }, [fetchGoals]);
+
+  const handleTransactionFormSubmit = async (data: Omit<Transaction, 'id'>, transactionId?: string) => {
+    if (!user || !activeProfile) {
+      showError('Erro', 'Usuário não autenticado.');
       return;
     }
 
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      try {
-        if (user) {
-          setCurrentUser(user);
-          await fetchUserData(user);
-        } else {
-          setCurrentUser(null);
-          setUserData(null);
-          setTransactions([]);
-        }
-      } finally {
-        setAuthLoading(false);
+    try {
+      const normalizedAmount = Math.abs(data.amount);
+
+      const payload = {
+        ...data,
+        amount: normalizedAmount,
+        profile: activeProfile.id,
+        createdBy: user.id,
+      };
+
+      if (transactionId) {
+        await api.updateTransaction(activeProfile.id, transactionId, payload);
+        setTransactions(prev => prev.map(tx => (tx.id === transactionId ? { ...tx, ...payload, id: transactionId } : tx)));
+      } else {
+        const res = await api.addTransaction(activeProfile.id, payload);
+        setTransactions(prev => [res.data, ...prev]);
       }
-    });
-
-    const initAuth = async () => {
-      try {
-        await getRedirectResult(auth);
-      } catch (error: any) {
-        console.error('Erro no redirect:', error.code, error.message);
-        showErrorMessage('Erro de Autenticação', 'Não foi possível completar o login. Por favor, tente novamente. ' + (error.message || ''));
-      }
-    };
-
-    initAuth();
-    return () => unsubscribe();
-  }, [fetchUserData]);
-
-  const handleLogout = async () => {
-    await api.logout();
-  };
-
-  const handleOnboardingFinish = async () => {
-    if (currentUser && userData) {
-      setOnboardingOpen(false);
-      const updatedUserData = { ...userData, hasSeenOnboarding: true };
-      await api.updateUserData(currentUser.uid, updatedUserData);
-      setUserData(updatedUserData);
-      setPostOnboardingModalOpen(true);
+      setTransactionFormModalOpen(false);
+      setTransactionToEdit(null);
+    } catch (err: any) {
+      showError('Erro ao Salvar Transação', err.message || 'Não foi possível salvar a transação.');
     }
   };
 
-  // Funções para abrir o modal de transação em modo de criação
+  const handleDeleteTransaction = async (transactionId: string) => {
+    if (!activeProfile) return;
+    if (!window.confirm('Tem certeza que deseja deletar esta transação?')) return;
+    try {
+      await api.deleteTransaction(activeProfile.id, transactionId);
+      setTransactions(prev => prev.filter(tx => tx.id !== transactionId));
+    } catch (err: any) {
+      showError('Erro ao Deletar', err.message || 'Não foi possível deletar a transação.');
+    }
+  };
+
+  const handleCreateGoal = async (data: Omit<Goal, 'id' | 'currentAmount'>) => {
+    if (!activeProfile) return;
+    try {
+      const res = await api.createGoal(activeProfile.id, data);
+      setGoals(prev => [res.data, ...prev]);
+    } catch (err: any) {
+      showError('Erro ao Criar Meta', err.message || 'Não foi possível criar a meta.');
+    }
+  };
+
+  const handleEditGoal = async (goal: Goal) => {
+    if (!activeProfile) return;
+    try {
+      await api.updateGoal(activeProfile.id, goal.id, goal);
+      setGoals(prev => prev.map(g => g.id === goal.id ? goal : g));
+    } catch (err: any) {
+      showError('Erro ao Editar Meta', err.message || 'Não foi possível editar a meta.');
+    }
+  };
+
+  const handleDeleteGoal = async (goalId: string) => {
+    if (!activeProfile) return;
+    if (!window.confirm('Tem certeza que deseja deletar esta meta?')) return;
+    try {
+      await api.deleteGoal(activeProfile.id, goalId);
+      setGoals(prev => prev.filter(g => g.id !== goalId));
+    } catch (err: any) {
+      showError('Erro ao Deletar Meta', err.message || 'Não foi possível deletar a meta.');
+    }
+  };
+
   const openAddTransactionModal = (type: 'income' | 'expense') => {
-    console.log("App.tsx: openAddTransactionModal chamado com tipo:", type);
     setTransactionTypeForModal(type);
     setTransactionToEdit(null);
     setTransactionFormModalOpen(true);
   };
 
-  // NOVO: Função para abrir o modal em modo de edição
   const handleEditTransaction = (transaction: Transaction) => {
     setTransactionTypeForModal(transaction.type);
-    setTransactionToEdit(transaction); // Define a transação a ser editada
+    setTransactionToEdit(transaction);
     setTransactionFormModalOpen(true);
   };
 
-  // NOVO: Função para lidar com a submissão do formulário (criação ou edição)
-  const handleTransactionFormSubmit = async (data: Omit<Transaction, 'id'>, transactionId?: string) => {
-    if (!currentUser) {
-      showErrorMessage('Erro', 'Usuário não autenticado.');
-      return;
-    }
-
-    try {
-      const absoluteAmount = Math.abs(data.amount);
-      const normalizedAmount = data.type === 'expense' ? -absoluteAmount : absoluteAmount;
-
-      const rawTransactionToSave = {
-        ...data,
-        amount: normalizedAmount,
-        userId: currentUser.uid,
-      };
-
-      const transactionToSave = removeUndefinedFields(rawTransactionToSave);
-
-      if (transactionId) { // Estamos editando
-        // Para update, o parâmetro updatedData da API espera Partial<Omit<Transaction, 'id'>>
-        // Então transactionToSave (que já é Partial<...>) está correto aqui.
-        await api.updateTransaction(currentUser.uid, transactionId, transactionToSave);
-        setTransactions(prevTxs =>
-          prevTxs.map(tx => (tx.id === transactionId ? { ...tx, ...transactionToSave, id: transactionId } : tx))
-        );
-        console.log('✅ Transação atualizada:', transactionId);
-      } else { // Estamos criando
-        // Para add, a API espera Omit<Transaction, 'id'>, então usamos a asserção de tipo.
-        const savedTransaction = await api.addTransaction(currentUser.uid, transactionToSave as Omit<Transaction, 'id'>);
-        setTransactions(prevTxs => [savedTransaction, ...prevTxs]);
-        console.log('✅ Transação adicionada:', savedTransaction);
-      }
-      setTransactionFormModalOpen(false); // Fecha o modal
-    } catch (error: any) {
-      console.error('🔥 Erro ao salvar transação:', error);
-      showErrorMessage('Erro ao Salvar Transação', error.message || 'Não foi possível salvar a transação. Verifique os dados e tente novamente.');
-    }
-  };
-
-  // NOVO: Função para lidar com a exclusão de transações
-  const handleDeleteTransaction = async (transactionId: string) => {
-    if (!currentUser) {
-      showErrorMessage('Erro', 'Usuário não autenticado.');
-      return;
-    }
-
-    if (window.confirm('Tem certeza que deseja deletar esta transação?')) {
-      try {
-        await api.deleteTransaction(currentUser.uid, transactionId);
-        setTransactions(prevTxs => prevTxs.filter(tx => tx.id !== transactionId));
-        console.log('✅ Transação deletada:', transactionId);
-      } catch (error: any) {
-        console.error('🔥 Erro ao deletar transação:', error);
-        showErrorMessage('Erro ao Deletar Transação', error.message || 'Não foi possível deletar a transação. Tente novamente.');
-      }
-    }
-  };
-
-
-  if (isAuthLoading || (currentUser && isDataLoading)) {
+  if (authLoading) {
     return (
       <div className="min-h-screen bg-[#F7F8FA] flex items-center justify-center">
         <p className="text-lg font-semibold animate-pulse">Carregando...</p>
@@ -229,46 +181,35 @@ const App: React.FC = () => {
     );
   }
 
-  if (!currentUser) return <Auth />;
+  if (!user) return <Login />;
 
-  if (!userData && !isDataLoading) {
+  if (!activeProfile && profiles.length > 1) return <ProfileSelector />;
+  if (!activeProfile && profileLoading) {
     return (
       <div className="min-h-screen bg-[#F7F8FA] flex items-center justify-center">
-        <p className="text-lg font-semibold">Erro ao carregar os dados. Tente novamente.</p>
+        <p className="text-lg font-semibold animate-pulse">Carregando...</p>
       </div>
     );
   }
-
-  const loggedInUserMember = userData?.members?.[0];
+  if (!activeProfile) return null;
 
   const renderScreen = () => {
-    if (!userData) {
-      return (
-        <div className="flex items-center justify-center h-full">
-          <p>Preparando dados do usuário...</p>
-        </div>
-      );
-    }
-
     switch (activeScreen) {
       case 'inicio':
         return (
           <Dashboard
             transactions={transactions}
-            members={userData.members}
-            goals={userData.goals}
-            challenges={userData.challenges}
-            onUpdateChallengeStatus={() => {}}
-            onAddTransaction={openAddTransactionModal} // Passa a nova função
+            onAddTransaction={openAddTransactionModal}
+            isOwner={user.role === 'owner'}
+            profiles={profiles}
           />
         );
       case 'historico':
         return (
-          <TransactionsList // Usando o novo nome
+          <TransactionsList
             transactions={transactions}
-            members={userData.members}
-            onEditTransaction={handleEditTransaction}   // Passando para o componente de listagem
-            onDeleteTransaction={handleDeleteTransaction} // Passando para o componente de listagem
+            onEditTransaction={handleEditTransaction}
+            onDeleteTransaction={handleDeleteTransaction}
           />
         );
       case 'relatorios':
@@ -276,25 +217,18 @@ const App: React.FC = () => {
       case 'metas':
         return (
           <Goals
-            goals={userData.goals}
-            onCreateGoal={() => {}}
-            onEditGoal={() => {}}
+            goals={goals}
+            onCreateGoal={handleCreateGoal}
+            onEditGoal={handleEditGoal}
+            onDeleteGoal={handleDeleteGoal}
           />
         );
+      case 'investimentos':
+        return <Investments />;
       case 'perfil':
-        return (
-          <Profile
-            currentUser={loggedInUserMember}
-            members={userData.members}
-            cards={userData.cards}
-            onAddMember={() => {}}
-            onEditMember={() => {}}
-            onAddCard={() => {}}
-            onLogout={handleLogout}
-            startWithAddMember={startMemberSetup}
-            onSetupComplete={() => setStartMemberSetup(false)}
-          />
-        );
+        return <Profile />;
+      case 'consolidado':
+        return <ConsolidatedView onBack={() => setActiveScreen('inicio')} />;
       default:
         return null;
     }
@@ -302,22 +236,11 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#F7F8FA] text-gray-800">
-      {isOnboardingOpen && <OnboardingGuide onFinish={handleOnboardingFinish} />}
-      {isPostOnboardingModalOpen && (
-        <PostOnboardingModal
-          onConfirm={() => {}}
-          onDecline={() => setPostOnboardingModalOpen(false)}
-        />
-      )}
       {isTransactionFormModalOpen && (
         <TransactionFormModal
           key={transactionTypeForModal + (transactionToEdit?.id || 'new')}
-          onClose={() => {
-            setTransactionFormModalOpen(false);
-            setTransactionToEdit(null);
-          }}
+          onClose={() => { setTransactionFormModalOpen(false); setTransactionToEdit(null); }}
           onSubmit={handleTransactionFormSubmit}
-          members={userData?.members || []}
           type={transactionTypeForModal}
           transactionToEdit={transactionToEdit}
         />
@@ -327,24 +250,32 @@ const App: React.FC = () => {
         isOpen={isErrorModalOpen}
         title={errorModalTitle}
         message={errorModalMessage}
-        onClose={closeErrorModal}
+        onClose={() => setErrorModalOpen(false)}
       />
 
       <div className="max-w-md mx-auto min-h-screen flex flex-col shadow-lg bg-white">
-        {userData && (
-          <Header
-            familyProfile={userData.familyProfile}
-            onEditProfile={() => {}}
-            isAdmin={loggedInUserMember?.role === 'Administrador'}
-          />
-        )}
-        <main className="flex-grow p-4 pb-24">{renderScreen()}</main>
-        {userData && (
-          <BottomNav activeScreen={activeScreen} setActiveScreen={setActiveScreen} />
-        )}
+        <Header onViewConsolidated={() => setActiveScreen('consolidado')} />
+        <main className="flex-grow p-4 pb-24">
+          {isDataLoading ? (
+            <div className="flex items-center justify-center h-full">
+              <p className="animate-pulse text-gray-500">Carregando...</p>
+            </div>
+          ) : (
+            renderScreen()
+          )}
+        </main>
+        <BottomNav activeScreen={activeScreen} setActiveScreen={setActiveScreen} />
       </div>
     </div>
   );
 };
+
+const App: React.FC = () => (
+  <AuthProvider>
+    <ProfileProvider>
+      <AppContent />
+    </ProfileProvider>
+  </AuthProvider>
+);
 
 export default App;

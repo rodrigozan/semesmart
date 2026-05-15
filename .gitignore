@@ -1,6 +1,11 @@
-api/node_modules
-app/node_modules
 
+app/node_modules
+app/package-lock.json
+app/dist
+
+api/node_modules
 api/.env
 api/serviceAccountKey.json
-app/.env
+api/package-lock.json
+
+SemeSmart_Web_Credentials.json

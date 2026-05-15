@@ -1,8 +1,0 @@
-
-{
-  "name": "SemeSmart",
-  "description": "Uma aplicação web colaborativa para famílias que desejam atingir a independência financeira através da educação e gestão inteligente de gastos, com um assistente de IA para insights acionáveis.",
-  "requestFramePermissions": [
-    "camera"
-  ]
-}

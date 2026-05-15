@@ -1,131 +1,103 @@
-import { UserData, Transaction as TransactionType, Member } from "./types";
-import { defaultUserData } from "./data";
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
+const apiFetch = (url: string, options: RequestInit = {}) =>
+  fetch(`${API_URL}${url}`, {
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
 
 const api = {
-  async login(email: string, password: string): Promise<{ uid: string; email: string }> {
-    const res = await fetch(`${API_URL}/api/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || "Erro ao fazer login");
-    }
-    return res.json();
+  getMe: () =>
+    apiFetch('/auth/me').then(async (r) => {
+      if (!r.ok) throw new Error('Not authenticated');
+      return r.json();
+    }),
+
+  logout: () => apiFetch('/auth/logout', { method: 'POST' }),
+
+  getProfiles: () => apiFetch('/api/profiles').then((r) => r.json()),
+
+  createProfile: (data: { name: string; avatar?: string; color?: string }) =>
+    apiFetch('/api/profiles', { method: 'POST', body: JSON.stringify(data) }).then((r) => r.json()),
+
+  inviteMember: (profileId: string, email: string) =>
+    apiFetch(`/api/profiles/${profileId}/invite`, {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }).then((r) => r.json()),
+
+  getTransactions: (profileId: string, params: Record<string, string> = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiFetch(`/api/profiles/${profileId}/transactions${qs ? '?' + qs : ''}`).then((r) =>
+      r.json()
+    );
   },
 
-  async register(
-    name: string,
-    title: string,
-    email: string,
-    password: string
-  ): Promise<{ uid: string; email: string }> {
-    const res = await fetch(`${API_URL}/api/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, title, email, password }),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || "Erro ao registrar");
-    }
-    return res.json();
-  },
-
-  async logout(): Promise<void> {
-    return;
-  },
-
-  async getUserData(uid: string): Promise<UserData | null> {
-    const res = await fetch(`${API_URL}/api/user/${uid}`);
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || "Erro ao buscar dados");
-    }
-    return res.json();
-  },
-
-  async updateUserData(uid: string, data: UserData): Promise<UserData> {
-    const res = await fetch(`${API_URL}/api/user/${uid}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
+  addTransaction: (profileId: string, data: unknown) =>
+    apiFetch(`/api/profiles/${profileId}/transactions`, {
+      method: 'POST',
       body: JSON.stringify(data),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || "Erro ao atualizar dados");
-    }
-    return res.json();
+    }).then((r) => r.json()),
+
+  updateTransaction: (profileId: string, txId: string, data: unknown) =>
+    apiFetch(`/api/profiles/${profileId}/transactions/${txId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }).then((r) => r.json()),
+
+  deleteTransaction: (profileId: string, txId: string) =>
+    apiFetch(`/api/profiles/${profileId}/transactions/${txId}`, { method: 'DELETE' }),
+
+  getInvestments: (profileId: string) =>
+    apiFetch(`/api/profiles/${profileId}/investments`).then((r) => r.json()),
+
+  getInvestmentSummary: (profileId: string) =>
+    apiFetch(`/api/profiles/${profileId}/investments/summary`).then((r) => r.json()),
+
+  addInvestment: (profileId: string, data: unknown) =>
+    apiFetch(`/api/profiles/${profileId}/investments`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }).then((r) => r.json()),
+
+  updateInvestment: (profileId: string, invId: string, data: unknown) =>
+    apiFetch(`/api/profiles/${profileId}/investments/${invId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }).then((r) => r.json()),
+
+  deleteInvestment: (profileId: string, invId: string) =>
+    apiFetch(`/api/profiles/${profileId}/investments/${invId}`, { method: 'DELETE' }),
+
+  getGoals: (profileId: string) =>
+    apiFetch(`/api/profiles/${profileId}/goals`).then((r) => r.json()),
+
+  createGoal: (profileId: string, data: unknown) =>
+    apiFetch(`/api/profiles/${profileId}/goals`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }).then((r) => r.json()),
+
+  updateGoal: (profileId: string, goalId: string, data: unknown) =>
+    apiFetch(`/api/profiles/${profileId}/goals/${goalId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }).then((r) => r.json()),
+
+  deleteGoal: (profileId: string, goalId: string) =>
+    apiFetch(`/api/profiles/${profileId}/goals/${goalId}`, { method: 'DELETE' }),
+
+  getConsolidatedDashboard: (params?: { month?: string; year?: string }) => {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+    return apiFetch(`/api/dashboard/consolidated${qs}`).then(r => r.json());
   },
 
-  async getUserTransactions(uid: string): Promise<TransactionType[]> {
-    const res = await fetch(`${API_URL}/api/transactions/${uid}`);
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || "Erro ao buscar transações");
-    }
-    return res.json();
-  },
-
-  async getAIFinancialInsights(
-    transactions: TransactionType[]
-  ): Promise<{ title: string; description: string }[]> {
-    const res = await fetch(`${API_URL}/api/ai-insights`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+  getAIFinancialInsights: (transactions: unknown[]) =>
+    apiFetch('/api/ai-insights', {
+      method: 'POST',
       body: JSON.stringify({ transactions }),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || "Erro ao gerar insights");
-    }
-    return res.json();
-  },
-
-  async addTransaction(
-    uid: string,
-    transactionData: Omit<TransactionType, "id">
-  ): Promise<TransactionType> {
-    const res = await fetch(`${API_URL}/api/transactions/${uid}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(transactionData),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || "Erro ao adicionar transação");
-    }
-    return res.json();
-  },
-
-  async updateTransaction(
-    uid: string,
-    transactionId: string,
-    updatedData: Partial<Omit<TransactionType, "id">>
-  ): Promise<void> {
-    const res = await fetch(`${API_URL}/api/transactions/${uid}/${transactionId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(updatedData),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || "Erro ao atualizar transação");
-    }
-  },
-
-  async deleteTransaction(uid: string, transactionId: string): Promise<void> {
-    const res = await fetch(`${API_URL}/api/transactions/${uid}/${transactionId}`, {
-      method: "DELETE",
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || "Erro ao deletar transação");
-    }
-  },
+    }).then((r) => r.json()),
 };
 
 export default api;

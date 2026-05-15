@@ -2,7 +2,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-import './firebaseConfig'; // Initialize Firebase on startup
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

@@ -6,6 +6,10 @@ export enum Category {
   Contas = 'Contas',
   Saude = 'Saúde',
   Dizimo = 'Dízimo',
+  Investimento = 'Investimento',
+  IA = 'IA & Tecnologia',
+  Marketing = 'Marketing',
+  Ferramentas = 'Ferramentas',
   Outros = 'Outros',
   Entrada = 'Entrada',
 }
@@ -15,89 +19,102 @@ export enum PaymentMethod {
   CreditoAVista = 'Crédito à Vista',
   CreditoParcelado = 'Crédito Parcelado',
   Dinheiro = 'Dinheiro',
-  Beneficio = 'Cartão Benefício',
   PIX = 'PIX',
   VR = 'Vale Refeição',
-  Boleto = 'Boleto via App',
-  TED = 'TED',  
+  Boleto = 'Boleto',
+  TED = 'TED',
 }
 
-export type MemberRole = 'Administrador' | 'Cônjuge' | 'Membro';
-
-export interface Member {
+export interface User {
   id: string;
-  name: string;
-  avatar: string;
-  role: MemberRole;
-  title: string;
-  email?: string; 
-  incomeSource?: string;
-}
-
-export interface FamilyProfile {
+  email: string;
   name: string;
   avatar?: string;
-  createdAt: Date | string;
+  role: 'owner' | 'member';
+  profiles: Profile[];
+}
+
+export interface Profile {
+  id: string;
+  name: string;
+  slug: string;
+  owner: string;
+  members: ProfileMember[];
+  avatar?: string;
+  color: string;
+}
+
+export interface ProfileMember {
+  user: string;
+  canWrite: boolean;
 }
 
 export interface Transaction {
-  id: string; // ID gerado pelo Firestore
-  userId: string; // ID do usuário proprietário
+  id: string;
+  profile: string;
+  createdBy: string;
+  type: 'income' | 'expense';
+  amount: number;
   description: string;
-  amount: number; // Valor (negativo para despesas, positivo para receitas)
-  date: string; // Data da transação (ISO string)
-  createdAt: string; // Timestamp de criação no app (ISO string)
+  category: Category;
+  paymentMethod?: PaymentMethod;
+  date: string;
+  month: number;
+  year: number;
+  location?: string;
+  incomeSource?: string;
+  tags?: string[];
+  source: string;
+  createdAt: string;
+}
 
-  // Campos para otimização de consulta e categorização:
-  month: number; // Mês da transação (1-12)
-  year: number; // Ano da transação
-  category?: Category; // Apenas para despesas. Para receitas, este campo pode não existir.
-  paymentMethod?: PaymentMethod; // Apenas para despesas
-  location?: string; // Para o nome do estabelecimento/local (usado para despesas, por exemplo)
-  incomeSource?: string; // Apenas para receitas
-  source?: string; // Como a transação foi adicionada (ex: 'manual', 'import')
-  type: 'income' | 'expense'; // ESSENCIAL: O tipo da transação
-
-  // Campos de Membro
-  memberId: string;
-  memberName: string;
+export interface Investment {
+  id: string;
+  profile: string;
+  createdBy: string;
+  type: 'stock' | 'fii' | 'fixed_income' | 'crypto' | 'other';
+  ticker: string;
+  name: string;
+  quantity: number;
+  averagePrice: number;
+  currentPrice: number;
+  sector?: string;
+  broker?: string;
+  purchaseDate: string;
+  notes?: string;
 }
 
 export interface Goal {
   id: string;
+  profile: string;
+  createdBy: string;
   name: string;
   targetAmount: number;
   currentAmount: number;
-  illustration: string;
   deadline?: string;
+  illustration: string;
+  status: 'active' | 'completed' | 'paused';
 }
 
-export interface Challenge {
-  id: string;
-  title: string;
-  description: string;
-  icon: string;
-  status: 'available' | 'active' | 'completed';
+export interface ConsolidatedProfile {
+  profileId: string;
+  profileName: string;
+  profileColor: string;
+  incomes: number;
+  expenses: number;
+  balance: number;
 }
 
-export interface Card {
-  id: string;
+export interface ConsolidatedCategory {
   name: string;
-  last4: string;
-  issuer: 'visa' | 'mastercard' | 'elo' | 'amex' | 'other';
-}
-// Fix: Added UserData interface to be used in App.tsx.
-export interface UserData {
-  familyProfile: FamilyProfile;
-  transactions: Transaction[];
-  members: Member[];
-  goals: Goal[];
-  challenges: Challenge[];
-  cards: Card[];
-  hasSeenOnboarding?: boolean;
+  value: number;
+  profileId: string;
 }
 
-// Fix: Added UserCredentials interface to be used in Auth.tsx.
-export interface UserCredentials {
-  [key: string]: string;
+export interface ConsolidatedDashboard {
+  totalIncomes: number;
+  totalExpenses: number;
+  balance: number;
+  byProfile: ConsolidatedProfile[];
+  byCategory: ConsolidatedCategory[];
 }

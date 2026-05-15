@@ -1,259 +1,100 @@
+import 'dotenv/config';
 import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
-import { GoogleGenAI, Type } from '@google/genai';
+import session from 'express-session';
+import MongoStore from 'connect-mongo';
+import passport from './config/passport.js';
+import authRouter from './routes/auth.js';
+import profilesRouter from './routes/profiles.js';
+import transactionsRouter from './routes/transactions.js';
+import investmentsRouter from './routes/investments.js';
+import goalsRouter from './routes/goals.js';
+import aiRouter from './routes/ai.js';
+import dashboardRouter from './routes/dashboard.js';
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+// ─── Database ───────────────────────────────────────────────────────────────
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/semesmart';
 const PORT = process.env.PORT || 3001;
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
 await mongoose.connect(MONGODB_URI);
 console.log('MongoDB conectado!');
 
-const memberSchema = new mongoose.Schema({
-  id: String,
-  name: String,
-  avatar: String,
-  role: { type: String, enum: ['Administrador', 'Cônjuge', 'Membro'] },
-  title: String,
-  email: String,
-  incomeSource: String,
-}, { _id: false });
+// ─── App ─────────────────────────────────────────────────────────────────────
 
-const familyProfileSchema = new mongoose.Schema({
-  name: String,
-  avatar: String,
-  createdAt: Date,
-}, { _id: false });
+const app = express();
 
-const goalSchema = new mongoose.Schema({
-  id: String,
-  name: String,
-  targetAmount: Number,
-  currentAmount: Number,
-  illustration: String,
-  deadline: String,
-}, { _id: false });
+// CORS — credentials required for session cookies
+app.use(
+  cors({
+    origin: FRONTEND_URL,
+    credentials: true,
+  })
+);
 
-const challengeSchema = new mongoose.Schema({
-  id: String,
-  title: String,
-  description: String,
-  icon: String,
-  status: { type: String, enum: ['available', 'active', 'completed'] },
-}, { _id: false });
+app.use(express.json());
 
-const cardSchema = new mongoose.Schema({
-  id: String,
-  name: String,
-  last4: String,
-  issuer: { type: String, enum: ['visa', 'mastercard', 'elo', 'amex', 'other'] },
-}, { _id: false });
+// ─── Session ──────────────────────────────────────────────────────────────────
 
-const userDataSchema = new mongoose.Schema({
-  familyProfile: familyProfileSchema,
-  members: [memberSchema],
-  goals: [goalSchema],
-  challenges: [challengeSchema],
-  cards: [cardSchema],
-  hasSeenOnboarding: Boolean,
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    store: MongoStore.create({
+      mongoUrl: MONGODB_URI,
+      touchAfter: 24 * 3600, // lazy session update — only resave after 24 h of inactivity
+    }),
+    cookie: {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    },
+  })
+);
+
+// ─── Passport ────────────────────────────────────────────────────────────────
+
+app.use(passport.initialize());
+app.use(passport.session());
+
+// ─── Routes ──────────────────────────────────────────────────────────────────
+
+// Health check
+app.get('/', (req, res) => {
+  res.json({ status: 'ok', message: 'SemeSmart API' });
 });
 
-const userSchema = new mongoose.Schema({
-  uid: { type: String, required: true, unique: true, index: true },
-  email: { type: String, required: true },
-  userData: userDataSchema,
-}, { timestamps: true });
+// Auth (Google OAuth)
+app.use('/auth', authRouter);
 
-const transactionSchema = new mongoose.Schema({
-  id: String,
-  userId: { type: String, index: true },
-  description: String,
-  amount: Number,
-  date: String,
-  createdAt: String,
-  month: Number,
-  year: Number,
-  category: String,
-  paymentMethod: String,
-  location: String,
-  incomeSource: String,
-  source: String,
-  type: { type: String, enum: ['income', 'expense'] },
-  memberId: String,
-  memberName: String,
+// AI Insights route
+app.use('/api', aiRouter);
+
+// ─── ETAPA 2 Routes ───────────────────────────────────────────────────────────
+
+// Profiles CRUD + member management
+app.use('/api/profiles', profilesRouter);
+
+// Nested resource routes — all scoped to /:profileId
+app.use('/api/profiles/:profileId/transactions', transactionsRouter);
+app.use('/api/profiles/:profileId/investments', investmentsRouter);
+app.use('/api/profiles/:profileId/goals', goalsRouter);
+
+// ─── FASE 9 — Consolidated Dashboard ───────────────────────────────────────────
+
+app.use('/api/dashboard', dashboardRouter);
+
+// ─── Global Error Handler ─────────────────────────────────────────────────────
+
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({ error: 'Erro interno do servidor.' });
 });
 
-transactionSchema.index({ userId: 1, date: -1 });
-
-const User = mongoose.model('User', userSchema);
-const Transaction = mongoose.model('Transaction', transactionSchema);
-
-const defaultUserData = {
-  familyProfile: { name: 'Minha Família', avatar: '👨‍👩‍👧‍👦', createdAt: new Date() },
-  members: [{ id: 'm1', name: 'Eu', avatar: '😊', role: 'Administrador', title: 'Admin' }],
-  goals: [],
-  challenges: [],
-  cards: [],
-  hasSeenOnboarding: false,
-};
-
-app.post('/api/register', async (req, res) => {
-  try {
-    const { name, title, email, password } = req.body;
-    const existing = await User.findOne({ email });
-    if (existing) return res.status(400).json({ error: 'E-mail já cadastrado.' });
-
-    const uid = `uid_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const firstMember = {
-      id: `m${Date.now()}`,
-      name,
-      avatar: '😊',
-      role: 'Administrador',
-      title,
-    };
-
-    const user = new User({
-      uid,
-      email,
-      userData: { ...defaultUserData, members: [firstMember] },
-    });
-
-    await user.save();
-    res.json({ uid: user.uid, email: user.email });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    const user = await User.findOne({ email });
-    if (!user) return res.status(404).json({ error: 'Usuário não encontrado.' });
-    res.json({ uid: user.uid, email: user.email });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get('/api/user/:uid', async (req, res) => {
-  try {
-    const user = await User.findOne({ uid: req.params.uid });
-    if (!user) {
-      const newUser = new User({
-        uid: req.params.uid,
-        email: 'user@example.com',
-        userData: defaultUserData,
-      });
-      await newUser.save();
-      return res.json(newUser.userData);
-    }
-    res.json(user.userData);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.put('/api/user/:uid', async (req, res) => {
-  try {
-    const user = await User.findOneAndUpdate(
-      { uid: req.params.uid },
-      { userData: req.body },
-      { new: true }
-    );
-    if (!user) return res.status(404).json({ error: 'Usuário não encontrado.' });
-    res.json(user.userData);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get('/api/transactions/:uid', async (req, res) => {
-  try {
-    const transactions = await Transaction.find({ userId: req.params.uid }).sort({ date: -1 });
-    res.json(transactions);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/transactions/:uid', async (req, res) => {
-  try {
-    const id = `t${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const transaction = new Transaction({ id, userId: req.params.uid, ...req.body });
-    await transaction.save();
-    res.json({ id, ...req.body });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.put('/api/transactions/:uid/:id', async (req, res) => {
-  try {
-    const t = await Transaction.findOneAndUpdate(
-      { id: req.params.id, userId: req.params.uid },
-      req.body,
-      { new: true }
-    );
-    if (!t) return res.status(404).json({ error: 'Transação não encontrada.' });
-    res.json(t);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.delete('/api/transactions/:uid/:id', async (req, res) => {
-  try {
-    const t = await Transaction.findOneAndDelete({ id: req.params.id, userId: req.params.uid });
-    if (!t) return res.status(404).json({ error: 'Transação não encontrada.' });
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/ai-insights', async (req, res) => {
-  try {
-    const { transactions } = req.body;
-    if (!process.env.API_KEY) {
-      return res.status(500).json({ error: 'API_KEY não configurada.' });
-    }
-
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const simplified = transactions.map(({ description, amount, category }) => ({ description, amount, category }));
-
-    const prompt = `Você é um consultor financeiro otimista e didático. Analise os seguintes gastos e gere exatamente 3 dicas curtas e práticas para ajudar a família a economizar ou gerenciar melhor o orçamento.
-    
-    Gastos recentes:
-    ${JSON.stringify(simplified, null, 2)}
-    `;
-
-    const insightSchema = {
-      type: Type.OBJECT,
-      properties: {
-        title: { type: Type.STRING, description: 'Um título curto e chamativo para a dica financeira.' },
-        description: { type: Type.STRING, description: 'Uma descrição de uma frase, explicando a dica de forma simples e direta.' },
-      },
-      required: ['title', 'description'],
-    };
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: { type: Type.ARRAY, items: insightSchema },
-      },
-    });
-
-    res.json(JSON.parse(response.text.trim()));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+// ─── Start ────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => console.log(`API rodando na porta ${PORT}`));

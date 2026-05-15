@@ -22,7 +22,7 @@ const Reports: React.FC<ReportsProps> = ({ transactions = [] }) => {
 
   const expenses = useMemo(() => {
     if (!Array.isArray(transactions)) return [];
-    return transactions.filter(t => t.amount < 0);
+    return transactions.filter(t => t.type === 'expense');
   }, [transactions]);
 
   const dataForPieChart = useMemo(() => {
