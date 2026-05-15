@@ -1,16 +1,19 @@
 {
   "name": "semesmart_api",
   "version": "1.0.0",
-  "description": "A API to semesmart project",
-  "main": "import-transactions.cjs",
+  "description": "A REST API to semesmart project",
+  "main": "server.js",
   "author": "Rodrigo Zan",
   "license": "MIT",
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node import-transactions.cjs"
+    "start": "node server.js"
   },
   "dependencies": {
-    "firebase-admin": "^13.6.0"
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "mongoose": "^8.9.0",
+    "@google/genai": "^1.29.0"
   }
 }
